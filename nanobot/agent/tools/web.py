@@ -6,6 +6,7 @@ import os
 import re
 from typing import Any
 from urllib.parse import urlparse
+from loguru import logger
 
 import httpx
 
@@ -114,22 +115,35 @@ class WebSearchToolViaTavily(Tool):
 
     def __init__(self, api_key: str | None = None, max_results: int = 5):
         self._init_api_key = api_key
+        self.api_key = self._init_api_key or os.environ.get("TAVILY_API_KEY", "")
+        if not self.api_key:
+            raise Exception (
+                "Error: Tavily API key not configured. "
+                "Set it in ~/.nanobot/config.json under tools.web.search.apiKey "
+                "(or export TAVILY_API_KEY), then restart the gateway."
+            )
         self.max_results = max_results
+        from tavily import TavilyClient
+        self.client = TavilyClient(self.api_key)
+        logger.info("Tavily API client initialized")
 
     async def execute(self, **kwargs: Any) -> str:
         # To install: pip install tavily-python
+        logger.info("Searching the web using Tavily API... {}", kwargs)
 
         count = kwargs.get("count", self.max_results)
-        n = min(max(count or self.max_results, 1), 10)
-
-        from tavily import TavilyClient
-        client = TavilyClient(self.api_key)
-        response = client.search(
+        n = min(max(count or self.max_results, 1), 5)
+        response = self.client.search(
             query=kwargs.get("query", ""),
             search_depth="advanced",
             max_results=n,
         )
-        return "\n".join([f"{r.title} ({r.url}): {r.snippet}" for r in response.results])
+        logger.debug("Tavily API response: {}", response)
+        # return response
+        if not response:
+            return ""
+        import json
+        return json.dumps(response)
 
 
 WebSearchTool = WebSearchToolViaTavily
